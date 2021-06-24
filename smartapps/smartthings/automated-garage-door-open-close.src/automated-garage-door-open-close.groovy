@@ -10,21 +10,16 @@
  *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
  *  for the specific language governing permissions and limitations under the License.
  *
- * 	Automated Garage Door (Open / Close)
+ * 	Testing Automated Garage Door (Open / Close)
  *	Code modified from Ridiculously Automated Garage Door
  *
  *  Author: SmartThings
  *  Modified by: Taco / Trinitron79
- *  Date: 09-25-2016
+ *  Date: 07-23-2018
+ *  Updated 6-23-2021
+ * - Changed input "GarageDoorOpener", "capability.momentary" to input "GarageDoorOpener", "capability.doorControl" 
+ * - This allows the app to work with the new default Z-Wave Garage Door Opener device handler 
  *
- * Monitors arrival and departure of car(s) and
- *
- *    1) opens door when car arrives,
- *    2) closes door after car has departed (for N minutes),
- *    3) opens door when car door motion is detected,
- *    4) closes door when door was opened due to arrival and interior door is closed.
- *
- * 
  * Modified the orginial version to have the garage door automatically close and send notifications.  Also changed to allow temporary override door open checks.
  *
  */
@@ -33,7 +28,7 @@ definition(
     name: "Automated Garage Door (Open / Close)",
     namespace: "SmartThings",
     author: "SmartThings",
-    description: "Monitors arrival and departure of car(s) and 1) opens door when car arrives, 2) closes door after car has departed (for N minutes), 3) opens door when car door motion is detected, 4) closes door when door was opened due to arrival and interior door is closed. Modified the orginial version to have the garage door automatically close and send notifications.  Also changed to allow temporary override door open checks.",
+    description: "Testing Garage Door App",
     category: "Convenience",
     iconUrl: "https://s3.amazonaws.com/smartapp-icons/Meta/garage_contact.png",
     iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Meta/garage_contact@2x.png"
@@ -42,10 +37,11 @@ definition(
 preferences {
 
 	section("Garage door") {
-		input "doorSensor", "capability.contactSensor", title: "Which sensor?"
-		input "doorSwitch", "capability.momentary", title: "Which switch?"
+		input "GarageDoorSensor", "capability.contactSensor", title: "Which Garage Door Sensor?"
+		input "GarageDoorOpener", "capability.doorControl", title: "Which Garage Door Opener (switch)?"
 		input "openThreshold", "number", title: "Warn when open longer than (optional)",description: "Number of minutes", required: true
         input "autoCloseGarageDoor", "enum", title: "Close the garage door after being open longer than selected minutes", options: ['Yes', 'No'], required: true 
+        input "motionSensor", "capability.motionSensor", title: "Which motion sensor for AutoClose? (optional)", required: false
         input "skipcheck", "enum", title: "Working in the garage and want to keep the door open with no alerts? (If Yes door open checks will NOT happen, will need to reset to No when you're done in the garage to have checks happen again)", options: ['Yes', 'No'], required: true
         input("recipients", "contact", title: "Send notifications to") {
         input "phone", "phone", title: "Warn with text message (optional)", description: "Phone Number", required: false
@@ -64,19 +60,22 @@ preferences {
 }
 
 def installed() {
-	log.trace "installed()"
+	log.debug "installed()"
 	subscribe()
 }
 
 def updated() {
-	log.trace "updated()"
+	log.debug "updated()"
 	unsubscribe()
 	subscribe()
 }
 
 def subscribe() {
-	log.debug "present: ${cars.collect{it.displayName + ': ' + it.currentPresence}}"
-	subscribe(doorSensor, "contact", garageDoorContact)
+	subscribe(motionSensor, "motion", motionActiveHandler)
+    subscribe(GarageDoorSensor, "contact", garageDoorContact)
+   
+    
+    /*subscribe(doorSensor, "contact", garageDoorContact)
 
 	subscribe(cars, "presence", carPresence)
 	subscribe(carDoorSensors, "acceleration", accelerationActive)
@@ -84,21 +83,23 @@ def subscribe() {
 	if (interiorDoorSensor) {
 		subscribe(interiorDoorSensor, "contact.closed", interiorDoorClosed)
 	}
+    */
 }
 
 def doorOpenCheck()
 {
 	final thresholdMinutes = openThreshold
 	if (thresholdMinutes) {
-		def currentState = doorSensor.contactState
-		log.debug "doorOpenCheck"
+		def currentState = GarageDoorSensor.contactState
+        def motionState = motionSensor.currentState("motion")
+		log.debug "doorOpenCheck ${motionState.value}"
 		if (currentState?.value == "open" & skipcheck == "No") {
 			log.debug "open for ${now() - currentState.date.time}, openDoorNotificationSent: ${state.openDoorNotificationSent}"
 			if (!state.openDoorNotificationSent && now() - currentState.date.time > thresholdMinutes * 60 *1000) {
-                def msg = "${doorSwitch.displayName} has been open for ${thresholdMinutes} minutes"
+                def msg = "${GarageDoorOpener.displayName} has been open for ${thresholdMinutes} minutes"
 				log.info msg
 				if (autoCloseGarageDoor == "Yes") {
-					def msg2 = "Closing ${doorSwitch.displayName} because it has been open for ${thresholdMinutes} minutes"
+					def msg2 = "Closing ${GarageDoorOpener.displayName} because it has been open for ${thresholdMinutes} minutes"
 					log.debug "Auto Close Door selected, Calling to close Garage Door"
 					log.info msg2
                     closeDoor()
